@@ -1,9 +1,19 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
 import os
 
 app = FastAPI()
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -11,9 +21,14 @@ if not API_KEY:
     raise ValueError("GEMINI_API_KEY not set")
 
 genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel("gemini-2.5-flash")
 
-# ---- STORE LATEST DATA ----
+# ----------------- STATE STORAGE -----------------
 latest_data = {}
+reading_counter = 0
+last_advice = "Waiting for first AI cycle..."
+
+# -------------------------------------------------
 
 class SensorData(BaseModel):
     temperature: float
@@ -44,29 +59,39 @@ def generate_advice(data: SensorData):
     Soil: {data.soil}
 
     1mm = 4046 Liters per Acre.
-
-    STRICT FORMAT:
-    CURRENT STATUS:
-    IMMEDIATE ACTION:
-    TOTAL VOLUME:
+    Provide irrigation recommendation.
     """
 
-    model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
+
+    if not response or not response.text:
+        return "AI returned empty response."
+
     return response.text
 
 @app.post("/predict")
 def predict(data: SensorData):
 
-    advice = generate_advice(data)
+    global reading_counter, latest_data, last_advice
 
-    # Save latest reading
-    global latest_data
+    reading_counter += 1
+
+    # Only call Gemini every 12 readings
+    if reading_counter >= 12:
+        try:
+            last_advice = generate_advice(data)
+        except Exception as e:
+            last_advice = f"AI Error: {str(e)}"
+
+        reading_counter = 0  # reset counter
+
+    # Always update sensor data
     latest_data = {
         "temperature": data.temperature,
         "humidity": data.humidity,
         "soil": data.soil,
-        "advice": advice
+        "advice": last_advice,
+        "reading_count": reading_counter
     }
 
-    return {"advice": advice}
+    return {"advice": last_advice}
