@@ -8,9 +8,12 @@ app = FastAPI()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not API_KEY:
-    raise ValueError("GEMINI_API_KEY not set in environment variables")
+    raise ValueError("GEMINI_API_KEY not set")
 
 genai.configure(api_key=API_KEY)
+
+# ---- STORE LATEST DATA ----
+latest_data = {}
 
 class SensorData(BaseModel):
     temperature: float
@@ -25,6 +28,10 @@ class SensorData(BaseModel):
 def root():
     return {"status": "Backend running"}
 
+@app.get("/latest")
+def get_latest():
+    return latest_data
+
 def generate_advice(data: SensorData):
 
     prompt = f"""
@@ -36,34 +43,30 @@ def generate_advice(data: SensorData):
     Humidity: {data.humidity}
     Soil: {data.soil}
 
-    TASK:
-    1. Analyze this specific hour's data.
-    2. If soil is dry, give EXACT liters needed for {data.farm_size} acres.
-    3. Formula: 1mm = 4046 Liters per Acre.
+    1mm = 4046 Liters per Acre.
 
     STRICT FORMAT:
-    -------------------------------------------
     CURRENT STATUS:
-    - Readings: {data.temperature}, {data.humidity}, {data.soil}
-    - Status: [brief explanation]
-
     IMMEDIATE ACTION:
-    1. WATERING: [Apply Xm now / No water needed]
-    2. TOTAL VOLUME: [X] Liters for {data.farm_size} acres.
-    3. NEXT CHECK: [Advice for next hour]
-    -------------------------------------------
-
-    {"Translate the entire output to the local language." if data.translate else "Use simple English."}
+    TOTAL VOLUME:
     """
 
-    try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"AI Processing Error: {str(e)}"
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    response = model.generate_content(prompt)
+    return response.text
 
 @app.post("/predict")
 def predict(data: SensorData):
+
     advice = generate_advice(data)
+
+    # Save latest reading
+    global latest_data
+    latest_data = {
+        "temperature": data.temperature,
+        "humidity": data.humidity,
+        "soil": data.soil,
+        "advice": advice
+    }
+
     return {"advice": advice}
