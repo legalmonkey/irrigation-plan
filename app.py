@@ -1,12 +1,16 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from google import genai
+import google.generativeai as genai
 import os
 
 app = FastAPI()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=API_KEY)
+
+if not API_KEY:
+    raise ValueError("GEMINI_API_KEY not set in environment variables")
+
+genai.configure(api_key=API_KEY)
 
 class SensorData(BaseModel):
     temperature: float
@@ -15,6 +19,11 @@ class SensorData(BaseModel):
     crop: str
     location: str
     farm_size: float
+    translate: bool
+
+@app.get("/")
+def root():
+    return {"status": "Backend running"}
 
 def generate_advice(data: SensorData):
 
@@ -27,16 +36,32 @@ def generate_advice(data: SensorData):
     Humidity: {data.humidity}
     Soil: {data.soil}
 
-    1mm = 4046 Liters per Acre.
-    Give irrigation recommendation.
+    TASK:
+    1. Analyze this specific hour's data.
+    2. If soil is dry, give EXACT liters needed for {data.farm_size} acres.
+    3. Formula: 1mm = 4046 Liters per Acre.
+
+    STRICT FORMAT:
+    -------------------------------------------
+    CURRENT STATUS:
+    - Readings: {data.temperature}, {data.humidity}, {data.soil}
+    - Status: [brief explanation]
+
+    IMMEDIATE ACTION:
+    1. WATERING: [Apply Xm now / No water needed]
+    2. TOTAL VOLUME: [X] Liters for {data.farm_size} acres.
+    3. NEXT CHECK: [Advice for next hour]
+    -------------------------------------------
+
+    {"Translate the entire output to the local language." if data.translate else "Use simple English."}
     """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-
-    return response.text
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI Processing Error: {str(e)}"
 
 @app.post("/predict")
 def predict(data: SensorData):
