@@ -4,12 +4,15 @@ from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
 import os
 
+
+
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # Allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
